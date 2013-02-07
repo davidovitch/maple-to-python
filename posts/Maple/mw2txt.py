@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # 
-# Copyright (C) 2011-2012 W. Trevor King <wking@drexel.edu>
+# Copyright (C) 2011-2013 W. Trevor King <wking@tremily.us>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as
@@ -22,28 +22,38 @@
 ./mw2txt.py -m input.mw | /opt/maple15/bin/maple | less
 """
 
+import logging as _logging
 import sys as _sys
 
 import lxml.etree as _lxml_etree
 
 try:
     from pygments.console import colorize as _colorize
-except ImportError, e:
+except ImportError as e:
     _sys.stderr.write(str(e) + '\n')
-    def _write_color(string, color=None, stream=None):
-        if stream is None:
-            stream = _sys.stdout
-        stream.write(string)
+    def _color_string(string, color=None):
+        return string
 else:
-    def _write_color(string, color=None, stream=None):
-        if color is None:
-            color = 'reset'
-        if stream is None:
-            stream = _sys.stdout
-        stream.write(_colorize(color_key=color, text=string))
+    def _color_string(string, color=None):
+        color = {
+            'magenta': 'fuchsia',
+            'cyan': 'turquoise',
+            None: 'reset',
+            }.get(color, color)
+        return _colorize(color_key=color, text=string)
 
 
-__version__ = '0.1'
+__version__ = '0.2'
+
+LOG = _logging.getLogger(__name__)
+LOG.addHandler(_logging.StreamHandler())
+LOG.setLevel(_logging.ERROR)
+
+
+def _write_color(string, color=None, stream=None):
+    if stream is None:
+        stream = _sys.stdout
+    stream.write(_color_string(string=string, color=color))
 
 
 class Writer (object):
@@ -146,9 +156,10 @@ def node_style(node):
     return None
 
 def pruned_iteration(root, match, match_action=None, match_tail=None,
-                     other_action=None, other_tail=None, debug=False):
-    if debug:
-        _write_color('start pruned iteration from %s\n' % root, color='blue')
+                     other_action=None, other_tail=None):
+    LOG.debug(
+        _color_string(
+            'start pruned iteration from {}'.format(root), color='blue'))
     line = [None]
     stack = [root]
     while len(stack) > 0:
@@ -160,10 +171,9 @@ def pruned_iteration(root, match, match_action=None, match_tail=None,
                 break
             _pruned_iteration_handle_tail(
                 node=n, match=match, match_tail=match_tail,
-                other_tail=other_tail, debug=debug)
+                other_tail=other_tail)
         line.append(node)
-        if debug:
-            color_node(node, color='cyan')
+        LOG.debug(color_node(node, color='cyan'))
         if match(node):
             if match_action:
                 match_action(node)
@@ -176,15 +186,13 @@ def pruned_iteration(root, match, match_action=None, match_tail=None,
         if n is None:
             break
         _pruned_iteration_handle_tail(
-            node=n, match=match, match_tail=match_tail, other_tail=other_tail,
-            debug=debug)
-    if debug:
-        _write_color('end pruned iteration from %s\n' % root, color='blue')
+            node=n, match=match, match_tail=match_tail, other_tail=other_tail)
+    LOG.debug(
+        _color_string(
+            'end pruned iteration from {}'.format(root), color='blue'))
 
-def _pruned_iteration_handle_tail(node, match, match_tail, other_tail,
-                                  debug=False):
-    if debug:
-        color_node(node, color='magenta', tail=True)
+def _pruned_iteration_handle_tail(node, match, match_tail, other_tail):
+    LOG.debug(color_node(node, color='magenta', tail=True))
     if match(node):
         if match_tail:
             match_tail(node)
@@ -205,32 +213,40 @@ def color_node(node, color=None, tail=False):
     string = ' '*depth + node.tag
     if tail:
         string += ' tail'
-    _write_color(string + '\n', color)
+    return _color_string(string, color)
 
 
 if __name__ == '__main__':
-    from optparse import OptionParser as _OptionParser
+    import argparse as _argparse
 
-    # don't wrap epilog paragraphs
-    class OptionParser (_OptionParser):
-        def format_epilog(self, formatter):
-            return self.epilog
-
-    parser = OptionParser(
-        usage='%prog [options] input.mw', epilog='\n'+__doc__)
-    parser.add_option(
-        '-c', '--color', dest='color', action='store_true',
-        help='Use ANSI escape sequences to color output')
-    parser.add_option(
-        '-m', '--maple', dest='maple', action='store_true',
+    parser = _argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=_argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        '-v', '--version', action='version',
+        version='%(prog)s {}'.format(__version__),
+        help='print the program version and exit')
+    parser.add_argument(
+        '-V', '--verbose', action='count', default=0,
+        help='increment log verbosity')
+    parser.add_argument(
+        '-c', '--color', action='store_const', const=True,
+        help='use ANSI escape sequences to color output')
+    parser.add_argument(
+        '-m', '--maple', action='store_const', const=True,
         help='output text suitable for piping into `maple`')
+    parser.add_argument(
+        'path', metavar='PATH',
+        help='path to a Maple worksheet (.mw)')
 
-    options,args = parser.parse_args()
-    path = args[0]
+    args = parser.parse_args()
 
-    filter_math = options.maple
-    writer = Writer(use_color=options.color)
-    if options.maple:
-        if options.color:
+    if args.verbose:
+        LOG.setLevel(max(_logging.DEBUG, LOG.level - 10*args.verbose))
+
+    filter_math = args.maple
+    writer = Writer(use_color=args.color)
+    if args.maple:
+        if args.color:
             raise ValueError("maple doesn't understand ANSI color")
-    mw2txt(path=path, writer=writer, filter_math=filter_math)
+    mw2txt(path=args.path, writer=writer, filter_math=filter_math)
