@@ -1,3 +1,8 @@
+maple-to-python
+===============
+
+maple-to-python
+
 Some of the classes I TA use [Maple][].  (Caveat: I prefer [[Python]],
 as a more general language.  Use [[SymPy]] or [Sage][] if you need
 symbolic processing.)  Anyhow, I get Maple worksheets to grade.
