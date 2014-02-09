@@ -59,10 +59,10 @@ from sympy import init_printing
 """
         self.maple_2_sympy_mappings = """
 def Transpose(matrix):
-    return sy.transpose()
+    return sy.transpose(matrix)
 
-def VectorRow(matrix):
-    return sy.transpose(sy.Matrix(matrix))
+def VectorRow(vector_list):
+    return sy.transpose(Matrix(vector_list))
 
 def VectorAdd(a, b):
     return a+b
@@ -143,7 +143,7 @@ def Multiply(a, b):
         matrix << Group(lsbr + args + rsbr)
         
         # terms in parenthesis can hold other nested structures
-        terms = OneOrMore( Group( (variable|terms_par) + op_opt) )
+        terms = OneOrMore( Group( (command|variable|terms_par) + op_opt) )
         terms_par << OneOrMore( Group(lpar + terms + rpar + op_opt) )
         mixed_terms << OneOrMore( (terms_par|terms) + op_opt )
         
@@ -243,13 +243,13 @@ class Tests(unittest.TestCase):
     
     def test_case1(self):
         line = '> omega[beta[2]] := Vector[row]([0,beta[flux[2]],0]);'
-        result = flatten_to_string(self.mw.parse_line(line))
         truth = 'omegabeta2=VectorRow([0,betaflux2,0])'
+        result = flatten_to_string(self.mw.parse_line(line))
         self.assertEqual(result, truth)
         
         line = '> r_0 := Vector[row]([l/2,0,0]);'
-        result = flatten_to_string(self.mw.parse_line(line))
         truth = 'r_0=VectorRow([l/2,0,0])'
+        result = flatten_to_string(self.mw.parse_line(line))
         self.assertEqual(result, truth)
         
 #> r_cg_beta := Vector[row]([R/2,0,0]);
@@ -270,6 +270,9 @@ class Tests(unittest.TestCase):
         
         truth = 'omegarho1=Multiply(omegarho,Multiply(Transpose(Rpsi1),'
         truth += 'Transpose(Rbeta1)))'
+        
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.assertEqual(result, truth)
     
     def test_case4(self):
         """
@@ -280,7 +283,13 @@ class Tests(unittest.TestCase):
         line += '+ Multiply(r_cg_beta,Multiply(R[beta[1]],'
         line += 'Multiply(R[psi[1]],R[rho])));'
         
-        truth = 'R_cg_blade_1_0=r_0+Multiply'
+        truth = 'R_cg_blade_1_0=r_0+Multiply(r_2,Rrho)'
+        truth += '+Multiply(r_3_beta_1,Rrho)'
+        truth += '+Multiply(r_cg_beta,Multiply(Rbeta1,'
+        truth += 'Multiply(Rpsi1,Rrho)))'
+        
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.assertEqual(result, truth)
     
     def cases(self):
         ex1 = 'p_omega[1[2]][9a9]'
