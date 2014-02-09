@@ -64,33 +64,35 @@ class MapleGrammer:
         comma = Optional(Literal(','))
         op_opt = Optional(Word('+-*/'))
 
-        # variables have nested structures with varname[subvarname[varname]]
+        # nested structures
         variable = Forward()
+        terms_par = Forward()
+        mixed_terms = Forward()
+        command = Forward()
+        matrix = Forward()
+
+        # variables have nested structures with varname[subvarname[varname]]
         subname = ZeroOrMore(Group(lsbr_ + variable + rsbr_))
         variable << Group( (varname|nums) + subname )
         # keep track of all the variables added
         variable.setParseAction( add_var )
         
         # same with commands, matrices: they can be nested.
-        command = Forward()
-        matrix = Forward()
         # mind the order: first command, than variable. The variable definition
         # will be satisfied just before reaching the opening bracket and that
         # will result in a false positive for the variable
-        arguments = OneOrMore( Group( (matrix|command|variable) + comma) )
-        parenthesis = Group(lpar + (arguments) + rpar)
-        command << Group( (varname + parenthesis) )
+        arguments = OneOrMore( Group( (matrix|command|variable|mixed_terms) + comma) )
+        command << Group( (varname + Group(lpar + arguments + rpar)) )
         
         # matrices are also nested structures
         matrix << Group(lsbr + arguments + rsbr)
         
-        # tuned version AA
-        terms_par = Forward()
+        # terms in parenthesis can hold other nested structures
         terms = OneOrMore( Group( (variable|terms_par) + op_opt) )
         terms_par << OneOrMore( Group(lpar + terms + rpar + op_opt) )
-        mixed_terms = OneOrMore( (terms_par|terms) + op_opt )
+        mixed_terms << OneOrMore( (terms_par|terms) + op_opt )
         
-#        # works only for one depth () DON't CHANGE
+#        # works only for one depth
 #        terms = OneOrMore( Group( (variable) + op_opt) )
 #        terms_par = OneOrMore( Group(lpar + terms + rpar + op_opt) )
 #        group_terms = OneOrMore( (terms_par|terms) + op_opt )
@@ -114,7 +116,7 @@ class MapleGrammer:
         
         self.line = self.line.replace('Vector[row]', 'VectorRow')
         
-    def parse(self, fname):
+    def parse(self, fname, debug=False, output='parsed.py'):
         
         nr_fails = 0
         result = ''
@@ -124,16 +126,20 @@ class MapleGrammer:
                 try:
                     res_parse = self.bnf.parseString(self.line)
                 except ParseException:
-                    print 'xxxx   %s' % (self.line)
+                    if debug:
+                        print 'xxxx   %s' % (self.line)
                     nr_fails += 1
                 res_flat = flatten_to_string(res_parse)
                 result += res_flat + '\n'
-                print '%4i   %s' % (i, res_flat)
-        print
-        print '*'*75
-        print '%4i   lines where not parsed sucesfully' % nr_fails
+                if debug:
+                    print '%4i   %s' % (i, res_flat)
         
-        with file(fname + 'save', 'w') as f:
+        if debug:
+            print
+            print '*'*75
+            print '%4i   lines where not parsed sucesfully' % nr_fails
+        
+        with file(output, 'w') as f:
             f.write(result)
             f.flush()
 
@@ -217,12 +223,17 @@ class Tests(unittest.TestCase):
         pprint(res.asList(), indent=2, depth=10, width=10)
         for k in res:
             print k
+        
+        
+        # everything combined
+        ex3 = 'dummy = Matrix([[cos(beta[2]),0,-sin(beta[2])],[0,1,0],'
+        ex3 += '[sin(beta[2]),VectorAdd(p_omega[1[2]][9a9]*(9+10),beta),cos(beta[2])]])'
 
 if __name__ == '__main__':
     
-    fname = 'output.txt'
+    fname = 'example2-txtouput.txt'
     mw = MapleGrammer()
-    res = mw.parse(fname)
+    res = mw.parse(fname, debug=True)
     
     
 
