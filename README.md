@@ -5,13 +5,14 @@ Introduction
 ------------
 
 This is a very early and naive prototype on an incomplete and unfinished 
-conversion scheme from a Maple [0] worksheet to either an IPython notebook or a
-Python/SymPy script.
+conversion scheme from a [Maple](http://www.maplesoft.com/products/maple/) 
+worksheet to either an IPython notebook or a Python/SymPy script.
 
 As a first step, the Maple commands are extracted from the worksheet (*.mw) XML 
-file, and converted to text using mw2txt.py [1](http://blog.tremily.us/posts/Maple/).
-The second step takes the text output of the Maple worksheet and uses pyparsing [2]
-to parse the commands and convert them to SymPy [3] compatible commands.
+file, and converted to text using [mw2txt.py](http://blog.tremily.us/posts/Maple/).
+The second step takes the text output of the Maple worksheet and uses 
+[pyparsing](http://pyparsing.wikispaces.com/) to parse the commands and convert
+them to [SymPy](http://sympy.org/en/index.html) compatible commands.
 
 mw2txt.py
 ---------
@@ -31,7 +32,8 @@ Hi there
 Equation
 ```
 
-TODO:
+Roadmap
+-------
 
 * Merge mw2txt.py and mw2py.py into a single library
 
@@ -43,12 +45,7 @@ calls.
 * Write a lot of unittests to make sure the parsing is done correctly for as
 meany corner cases as possible
 
-* Save as IPython notebook or Python script
-
-[0] [Maple](http://www.maplesoft.com/products/maple/)
-[1] [mw2txt.py](http://blog.tremily.us/posts/Maple/)
-[2] [pyparsing](http://pyparsing.wikispaces.com/)
-[3] [SymPy](http://sympy.org/en/index.html)
+* Save as [IPython notebook](http://ipython.org/notebook.html) or Python script
 
 Maple is a registered trademark of Maplesoft.
 
