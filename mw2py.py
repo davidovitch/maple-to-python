@@ -47,6 +47,8 @@ class MapleGrammer:
         self.bnf = self.BNF()
         self.var_stack = {}
         self.command_stack = {}
+        self.var_replace = []
+        self.correct_var_index = False
         
         self.file_header = """
 import numpy as np
@@ -55,7 +57,8 @@ import sympy as sy
 from sympy.matrices import Matrix
 from sympy import *
 # LaTeX rendered SymPy output
-from sympy import init_printing 
+from sympy import init_printing
+init_printing()
 """
         self.maple_2_sympy_mappings = """
 def Transpose(matrix):
@@ -80,6 +83,20 @@ def Multiply(a, b):
 #        var_stack.append( flatten_to_string(toks) )
         
         varname = flatten_to_string(toks)
+        
+        # if the last character is and integer, and if the base name has been
+        # declared before, we have have to replace the var name
+        try:
+            i = int(varname[-1])
+            if varname[:-1] in self.var_stack:
+                # do not add the variable, and mark for replacement
+                newname = '%s[%i]' % (varname[:-1], i-1)
+                print varname, '---->', newname
+                self.var_replace.append( [varname, newname])
+                self.correct_var_index = True
+                return
+        except ValueError:
+            self.correct_var_index = False
         
         # do not include numbers
         try:
@@ -126,10 +143,21 @@ def Multiply(a, b):
         # variables have nested structures with varname[subvarname[varname]]
         # squary brackets in the variable names are filtered out, so use the
         # l|rsbr_ with the suppress() function
-        subname = ZeroOrMore(Group(lsbr_ + variable + rsbr_))
-        variable << Group( (varname|nums) + subname )
+        # Should be optional for 1x [] group. With ZeroOrMore it will also 
+        # match omega[1][1], which is actually pointing to an index
+        # FIXME: the solution should be: if the variable xyz[subscript] has
+        # been defined earlier in the script, then xyz[subscript][i] is and
+        # index and NOT part of the variable name. This means that we should
+        # build up the entire matching process through a stack variable
+        # that is callend upon setParseAction.
+        # Note that also omegarho3 should be omegarho[2] and D_tower2 as well
+#        subname = ZeroOrMore( Group(lsbr_ + variable + rsbr_) )
+#        variable << Group( (varname|nums) + subname )
+        subname = Group(lsbr_ + variable + rsbr_)
+        variable << Group( (varname|nums) + ZeroOrMore(subname) )
         # keep track of all the variables added
         variable.setParseAction( self._add_var )
+#        self.variable = variable
         
         # same with commands, matrices: they can be nested.
         # mind the order: first command, than variable. The variable definition
@@ -143,6 +171,7 @@ def Multiply(a, b):
         matrix << Group(lsbr + args + rsbr)
         
         # terms in parenthesis can hold other nested structures
+        # FIXME: variable here shouldn't be required?
         terms = OneOrMore( Group( (command|variable|terms_par) + op_opt) )
         terms_par << OneOrMore( Group(lpar + terms + rpar + op_opt) )
         mixed_terms << OneOrMore( (terms_par|terms) + op_opt )
@@ -163,7 +192,6 @@ def Multiply(a, b):
         self.line = self.line.replace(':=', '=')
         self.line = self.line.replace(';', '')
         self.line = self.line.replace('\n', '')
-        
         self.line = self.line.replace('Vector[row]', 'VectorRow')
     
     def define_sympy_symbols(self):
@@ -180,7 +208,33 @@ def Multiply(a, b):
         
         self.line = line
         self._pre()
+        
+#        # parse the LHS first, that can only be a variable
+#        try:
+#            lhs, rhs = self.line.split('=')
+#            lhs_parse = self.variable.parseString(lhs)
+#            lhs_parse = flatten_to_string(lhs_parse)
+#            
+#            rhs_parse = self.variable.parseString(lhs)
+#            rhs_parse = flatten_to_string(rhs_parse)
+#            
+#        except ValueError:
+        
         return self.bnf.parseString(self.line)
+    
+    def monkey_patch(self, line):
+        """
+        check if the basename has beend delcared before
+        """
+        
+        if self.correct_var_index:
+            target = min(len(self.var_replace), 12)
+            for i in range(-1, -target, -1):
+                line = line.replace(self.var_replace[i][0], 
+                                    self.var_replace[i][1])
+            return line
+        else:
+            return line
     
     def parse_file(self, fname, debug=False):
         
@@ -191,15 +245,26 @@ def Multiply(a, b):
         result.append('')
         with file(fname) as f:
             for i, self.line in enumerate(f.readlines()):
-                try:
-                    res_parse = self.parse_line(self.line)
-                except ParseException:
+                # lines to ignore, dirty hacks
+                if len(self.line) > 1000:
+                    res_parse = '# too long...'
+                elif self.line.startswith('Equation'):
+                    continue
+                elif self.line.find(':=') == -1:
                     res_parse = '#' + self.line
-                    nr_fails += 1
+                else:
+                    try:
+                        res_parse = self.parse_line(self.line)
+                    except ParseException:
+                        res_parse = '#' + self.line
+                        nr_fails += 1
                 res_flat = flatten_to_string(res_parse)
+#                res_flat = self.monkey_patch(res_flat)
                 result.append(res_flat)
                 if debug:
                     print '%4i   %s' % (i, res_flat)
+        
+        # replace the variables that have their index included
         
         self.define_sympy_symbols()
         result[2] = self.sympy_vars
@@ -288,6 +353,32 @@ class Tests(unittest.TestCase):
         truth += '+Multiply(r_cg_beta,Multiply(Rbeta1,'
         truth += 'Multiply(Rpsi1,Rrho)))'
         
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.assertEqual(result, truth)
+    
+    def test_case5(self):
+        line = '> JT := (1/12)*m_t*(l/2)*(l/2);'
+        truth = 'JT=(1/12)*m_t*(l/2)*(l/2)'
+        
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.assertEqual(result, truth)
+    
+    def test_case6(self):
+        """
+        """
+        line = '> omega[beta[1]] := Vector[row]([0,beta[flux[1]],0]);'
+        truth = 'omegabeta1=VectorRow([0,betaflux1,0])'
+        
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.assertEqual(result, truth)
+        self.assertTrue('betaflux1' in self.mw.var_stack.keys())
+        variables = self.mw.var_stack.keys()
+        self.assertFalse('beta1' in variables)
+        self.assertFalse('flux1' in variables)
+    
+    def test_case7(self):
+        line = 'JT := (1/12)*m_t*(l/2)*(l/(2*qwerty))+9;'
+        truth = 'JT=(1/12)*m_t*(l/2)*(l/(2*qwerty))+9'
         result = flatten_to_string(self.mw.parse_line(line))
         self.assertEqual(result, truth)
     
@@ -385,13 +476,24 @@ if __name__ == '__main__':
     line = '> r_0 := Vector[row]([l/2,0,0]);'
     line = '> omega[rho[1]] := Multiply(omega[rho],Multiply('
     line += 'Transpose(R[psi[1]]),Transpose(R[beta[1]])));'
+    line = '> omega[beta[1]] := Vector[row]([0,beta[flux[1]],0]);'
     result = mw.parse_line(line)
     res_flat = flatten_to_string(result)
     print line
     print res_flat
     
+    print 
+    print 'variables used'
+    print '-'*22
+    for var in sorted(mw.var_stack.keys()): print var
+    
+    print
+    print 'commands used by Maple'
+    print '-'*22
+    for k in sorted(mw.command_stack.keys()): print k
+    
     # parse a complete file
-    fname = 'example2-txtouput.txt'
+    fname = 'example2-txtouput-full.txt'
     res = mw.parse_file(fname, debug=True)
     mw.write_py(res)
     mw.write_notebook(res)
