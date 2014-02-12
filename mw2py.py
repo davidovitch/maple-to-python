@@ -46,6 +46,7 @@ class MapleGrammer:
         
         self.bnf = self.BNF()
         self.var_stack = {}
+        self.vector_stack = {}
         self.command_stack = {}
         self.var_replace = []
         self.correct_var_index = False
@@ -73,8 +74,14 @@ def VectorAdd(a, b):
 def Multiply(a, b):
     return a*b
 """
-    
-    def _add_var(self, strg, loc, toks ):
+   
+    def _add_vector(self, strg, loc, toks):
+        """
+        """
+        varname = flatten_to_string(toks)
+        self.vector_stack[varname] = strg
+   
+    def _add_var(self, strg, loc, toks):
         """
         Maintain a list of variables so we can define them as proper symbolic
         variables later with SymPy
@@ -91,7 +98,7 @@ def Multiply(a, b):
             if varname[:-1] in self.var_stack:
                 # do not add the variable, and mark for replacement
                 newname = '%s[%i]' % (varname[:-1], i-1)
-                print varname, '---->', newname
+                print '+++++++++', varname, '---->', newname
                 self.var_replace.append( [varname, newname])
                 self.correct_var_index = True
                 return
@@ -153,17 +160,24 @@ def Multiply(a, b):
         # Note that also omegarho3 should be omegarho[2] and D_tower2 as well
 #        subname = ZeroOrMore( Group(lsbr_ + variable + rsbr_) )
 #        variable << Group( (varname|nums) + subname )
+        # subname optional because with ZeroOrMore you get the index:
+        # qwerty[sub[subsub]][index]
         subname = Group(lsbr_ + variable + rsbr_)
-        variable << Group( (varname|nums) + ZeroOrMore(subname) )
+        variable << Group( (varname|nums) + Optional(subname) )
         # keep track of all the variables added
         variable.setParseAction( self._add_var )
 #        self.variable = variable
+        
+        # a vector is actually a special case of a variable. The problem is
+        # that most vectors are also valid variables. However, one case should
+        # only result in a vector: qwerty[1][1]
+        vector = Group(variable + lsbr + nums + rsbr).setParseAction( self._add_vector )
         
         # same with commands, matrices: they can be nested.
         # mind the order: first command, than variable. The variable definition
         # will be satisfied just before reaching the opening bracket and that
         # will result in a false positive for the variable
-        args = OneOrMore( Group((matrix|command|mixed_terms|variable)+comma) )
+        args = OneOrMore( Group((matrix|command|mixed_terms|variable|vector)+comma) )
         command << Group( (varname + Group(lpar + args + rpar)) )
         command.setParseAction(self._add_command)
         
@@ -172,14 +186,14 @@ def Multiply(a, b):
         
         # terms in parenthesis can hold other nested structures
         # FIXME: variable here shouldn't be required?
-        terms = OneOrMore( Group( (command|variable|terms_par) + op_opt) )
+        terms = OneOrMore( Group( (command|variable|vector|terms_par) + op_opt) )
         terms_par << OneOrMore( Group(lpar + terms + rpar + op_opt) )
         mixed_terms << OneOrMore( (terms_par|terms) + op_opt )
         
         # an expression of the form
-        exp = Group( command | mixed_terms | variable)
+        exp = (command | mixed_terms)
         # and finally we can assemble an equation
-        equation = (variable + equal + exp)
+        equation = ( (variable|vector) + equal + exp)
         
         return equation
     
@@ -259,7 +273,7 @@ def Multiply(a, b):
                         res_parse = '#' + self.line
                         nr_fails += 1
                 res_flat = flatten_to_string(res_parse)
-#                res_flat = self.monkey_patch(res_flat)
+                res_flat = self.monkey_patch(res_flat)
                 result.append(res_flat)
                 if debug:
                     print '%4i   %s' % (i, res_flat)
@@ -304,9 +318,32 @@ class Tests(unittest.TestCase):
     
     def setUp(self):
         self.mw = MapleGrammer()
+    
+    def print_test_info(self):
+        """
+        """
+        print 
+        print 'variables used'
+        print '-'*22
+        for var in sorted(self.mw.var_stack.keys()): 
+            print var
         
+        print 
+        print 'vectors found'
+        print '-'*22
+        for var in sorted(self.mw.vector_stack.keys()): 
+            print var
+        
+        print
+        print 'commands used by Maple'
+        print '-'*22
+        for k in sorted(self.mw.command_stack.keys()): 
+            print k
     
     def test_case1(self):
+        """
+        variables with multi depth subscripts
+        """
         line = '> omega[beta[2]] := Vector[row]([0,beta[flux[2]],0]);'
         truth = 'omegabeta2=VectorRow([0,betaflux2,0])'
         result = flatten_to_string(self.mw.parse_line(line))
@@ -330,6 +367,9 @@ class Tests(unittest.TestCase):
         line += 'rho=rho(t), psi=Omega*t},dT_dbeta1);'
     
     def test_case3(self):
+        """
+        Multi depth commands
+        """
         line = '> omega[rho[1]] := Multiply(omega[rho],Multiply('
         line += 'Transpose(R[psi[1]]),Transpose(R[beta[1]])));'
         
@@ -362,6 +402,11 @@ class Tests(unittest.TestCase):
         
         result = flatten_to_string(self.mw.parse_line(line))
         self.assertEqual(result, truth)
+        
+        line = 'JT := (1/12)*m_t*(l/2)*(l/(2*qwerty))+9;'
+        truth = 'JT=(1/12)*m_t*(l/2)*(l/(2*qwerty))+9'
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.assertEqual(result, truth)
     
     def test_case6(self):
         """
@@ -373,14 +418,45 @@ class Tests(unittest.TestCase):
         self.assertEqual(result, truth)
         self.assertTrue('betaflux1' in self.mw.var_stack.keys())
         variables = self.mw.var_stack.keys()
-        self.assertFalse('beta1' in variables)
-        self.assertFalse('flux1' in variables)
+        try:
+            self.assertFalse('beta1' in variables)
+            self.assertFalse('flux1' in variables)
+        except AssertionError as e:
+            self.print_test_info()
+            raise e
     
     def test_case7(self):
-        line = 'JT := (1/12)*m_t*(l/2)*(l/(2*qwerty))+9;'
-        truth = 'JT=(1/12)*m_t*(l/2)*(l/(2*qwerty))+9'
+        pass
+    
+    def test_case8(self):
+        """
+        find vector_index, multiple recursive terms
+        """
+        
+        # very simple case
+        line = '> T_rot_blade_2[a][1] := omega[2][1]'#+'
+        truth  = 'T_rot_blade_2a[1]=omega2[1]'#+'
         result = flatten_to_string(self.mw.parse_line(line))
+        self.print_test_info()
         self.assertEqual(result, truth)
+        
+        # medium case
+        line = '> T_rot_blade_2[a][1] := omega[2][1]+'
+        line += '(D_blade_2[2]*omega[2][2])+(D_blade_2[3]*omega[2][3]);'
+        truth  = 'T_rot_blade_2a[1]=omega2[1]+'
+        truth += '(D_blade_2[2]*omega2[2])+(D_blade_2[3]*omega[2][3]);'
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.print_test_info()
+        self.assertEqual(result, truth)
+        
+        line = '> T_rot_blade_2 := 0.5*((D_blade_2[1]*omega[2][1])+'
+        line += '(D_blade_2[2]*omega[2][2])+(D_blade_2[3]*omega[2][3]));'
+        truth  = 'T_rot_blade_2=0.5*((D_blade_2[1]*omega2[1])+'
+        truth += '(D_blade_2[2]*omega2[2])+(D_blade_2[3]*omega[2][3]));'
+        result = flatten_to_string(self.mw.parse_line(line))
+        self.print_test_info()
+        self.assertEqual(result, truth)
+        
     
     def cases(self):
         ex1 = 'p_omega[1[2]][9a9]'
@@ -468,7 +544,7 @@ class Tests(unittest.TestCase):
 
 if __name__ == '__main__':
     
-#    unittest.main()
+    unittest.main()
     
     mw = MapleGrammer()
     
@@ -508,5 +584,5 @@ if __name__ == '__main__':
     print '-'*22
     for k in sorted(mw.command_stack.keys()): print k
     
-    
+    unittest.main()
 
