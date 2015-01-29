@@ -47,7 +47,7 @@ are used either to create variable names with subscripts, or when a vector, it i
 used to indicate index of that vector. A more robust approach needs to be
 implemented to correctly distinguish vectors from variables with subscripts.
 
-* Write a lot more unittests to make sure the parsing is done correctly for as
+* Write more unittests to make sure the parsing is done correctly for as
 many corner cases as possible
 
 * Save as [IPython notebook](http://ipython.org/notebook.html) or Python script
