@@ -77,6 +77,8 @@ def Multiply(a, b):
 
     def _add_vector(self, strg, loc, toks):
         """
+        In an attempt to distinguish vectors from variables with subscripts,
+        maintain a dictionary that holds variable names of vectors.
         """
         varname = flatten_to_string(toks)
         self.vector_stack[varname] = strg
@@ -576,10 +578,10 @@ if __name__ == '__main__':
     for k in sorted(mw.command_stack.keys()): print k
 
     # parse a complete file
-    fname = 'example2-txtouput-full.txt'
+    fname = 'example-inc-output.txt'
     res = mw.parse_file(fname, debug=True)
-    mw.write_py(res)
-    mw.write_notebook(res)
+    mw.write_py(res, output=fname.replace('.txt', '.py'))
+    mw.write_notebook(res, output=fname.replace('.txt', '.ipynb'))
 
     print
     print 'variables used'
