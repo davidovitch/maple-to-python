@@ -38,12 +38,17 @@ Roadmap
 * Merge mw2txt.py and mw2py.py into a single library
 
 * not all Maple function calls are translated correctly to SymPy constructs.
-Either write wrapper functions with the same Maple syntax and includ them in the
+Either write wrapper functions with the same Maple syntax and include them in the
 output, or create additional parsing rules to translate them to native SymPy
 calls.
 
-* Write a lot of unittests to make sure the parsing is done correctly for as
-meany corner cases as possible
+* The Maple syntax can be challenging to interpreted: the square brackets
+are used either to create variable names with subscripts, or when a vector, it is 
+used to indicate index of that vector. A more robust approach needs to be
+implemented to correctly distinguish vectors from variables with subscripts.
+
+* Write a lot more unittests to make sure the parsing is done correctly for as
+many corner cases as possible
 
 * Save as [IPython notebook](http://ipython.org/notebook.html) or Python script
 
